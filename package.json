@@ -6,6 +6,13 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
+    "@truffle/hdwallet-provider": "^2.1.15",
     "react-scripts": "^5.0.1"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject"
   }
 }
