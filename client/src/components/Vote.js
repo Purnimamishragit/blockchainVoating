@@ -1,109 +1,99 @@
-import React, { useEffect, useState } from 'react';
-import Web3 from 'web3';  // Import Web3
-import Voting from './VotingContract';  // Assuming you have this file with contract ABI and address
+import React, { useState, useEffect } from "react";
+import Web3 from "web3";
+import VotingContract from "../contracts/Voting.json"; // Adjust the path if needed
 
-const VotingApp = () => {
-  const [web3, setWeb3] = useState(null);
-  const [accounts, setAccounts] = useState([]);
-  const [contract, setContract] = useState(null);
-  const [candidates, setCandidates] = useState([]);
-  const [selectedCandidate, setSelectedCandidate] = useState(null);
+const Voting = () => {
+    const [account, setAccount] = useState("");
+    const [candidates, setCandidates] = useState([]);
+    const [voteStatus, setVoteStatus] = useState("");
 
-  // Initializing Web3 and requesting account access
-  useEffect(() => {
-    if (window.ethereum) {
-      const web3Instance = new Web3(window.ethereum);
-      setWeb3(web3Instance);
-      window.ethereum.request({ method: "eth_requestAccounts" }).then(setAccounts);
-    } else {
-      alert("Please install MetaMask!");
-    }
-  }, []);
+    useEffect(() => {
+        console.log("Using Contract ABI:", VotingContract.abi);
+        console.log("Using Contract Address:", VotingContract.networks[5777]?.address || "Not Found");
+        loadBlockchainData();
+    }, []);
 
-  // Loading the contract and candidates
-  useEffect(() => {
-    if (web3) {
-      const loadContract = async () => {
-        const networkId = await web3.eth.net.getId();
-        const deployedNetwork = Voting.networks[networkId];
-        const instance = new web3.eth.Contract(Voting.abi, deployedNetwork && deployedNetwork.address);
-        setContract(instance);
+    async function loadBlockchainData() {
+        if (window.ethereum) {
+            try {
+                const web3 = new Web3(window.ethereum);
+                const accounts = await web3.eth.getAccounts();
+                if (accounts.length === 0) {
+                    await window.ethereum.request({ method: "eth_requestAccounts" });
+                }
+                setAccount(accounts[0]);
 
-        // Load candidates count
-        const count = await instance.methods.candidatesCount().call();
-        console.log("Number of candidates:", count); // Debugging line
+                const contractAddress = VotingContract.networks[5777]?.address;
+                if (!contractAddress) {
+                    console.error("Contract address not found. Check deployment.");
+                    return;
+                }
 
-        const candidatesList = [];
-        for (let i = 1; i <= count; i++) {
-          const candidate = await instance.methods.candidates(i).call();
-          console.log("Candidate", i, ":", candidate); // Debugging line
+                const votingContract = new web3.eth.Contract(VotingContract.abi, contractAddress);
+                const candidateCount = await votingContract.methods.candidatesCount().call();
+                let candidatesArray = [];
 
-          if (candidate && candidate[1]) { // Checking if candidate is valid
-            candidatesList.push({
-              id: candidate[0],
-              name: candidate[1],
-              votes: candidate[2].toString() // Convert BigNumber to string
-            });
-          } else {
-            console.error(`Candidate at index ${i} is undefined or has no name`);
-          }
+                for (let i = 1; i <= candidateCount; i++) {
+                    const candidate = await votingContract.methods.getCandidate(i).call();
+                    candidatesArray.push({
+                        id: candidate[0],
+                        name: candidate[1],
+                        votes: candidate[2],
+                    });
+                }
+
+                setCandidates(candidatesArray);
+            } catch (error) {
+                console.error("Error loading blockchain data:", error);
+            }
+        } else {
+            alert("Please install MetaMask.");
         }
-        setCandidates(candidatesList);
-      };
-
-      loadContract();
     }
-  }, [web3]);
 
-  // Voting for a candidate
-  const vote = async () => {
-    if (contract && selectedCandidate !== null) {
-      try {
-        await contract.methods.vote(selectedCandidate).send({ from: accounts[0] });
-        alert("Voted successfully!");
-        // Reload candidates to see updated vote counts
-        const count = await contract.methods.candidatesCount().call();
-        const updatedCandidates = [];
-        for (let i = 1; i <= count; i++) {
-          const candidate = await contract.methods.candidates(i).call();
-          updatedCandidates.push({
-            id: candidate[0],
-            name: candidate[1],
-            votes: candidate[2].toString() // Convert BigNumber to string
-          });
+    async function voteCandidate(candidateId) {
+        if (!account) {
+            alert("Connect MetaMask first!");
+            return;
         }
-        setCandidates(updatedCandidates);
-      } catch (error) {
-        alert("Error voting: " + error.message);
-      }
+
+        try {
+            const web3 = new Web3(window.ethereum);
+            const contractAddress = VotingContract.networks[5777]?.address;
+            const votingContract = new web3.eth.Contract(VotingContract.abi, contractAddress);
+
+            await votingContract.methods.vote(candidateId).send({ from: account });
+
+            setVoteStatus(`Voted successfully for Candidate ${candidateId}`);
+            loadBlockchainData(); // Refresh UI
+        } catch (error) {
+            console.error("Voting error:", error);
+            setVoteStatus("Error voting: " + error.message);
+        }
     }
-  };
 
-  return (
-    <div>
-      <h1>Vote for Your Candidate</h1>
-      <p>Connected Account: {accounts[0]}</p>
+    return (
+        <div>
+            <h1>Blockchain Voting System</h1>
+            <p>Connected Account: {account || "Not Connected"}</p>
 
-      <h3>Candidates:</h3>
-      <ul>
-        {candidates.length > 0 ? (
-          candidates.map((candidate, index) => (
-            <li key={index}>
-              <button onClick={() => setSelectedCandidate(candidate.id)}>
-                {candidate.name} - Votes: {candidate.votes}
-              </button>
-            </li>
-          ))
-        ) : (
-          <li>No candidates available.</li>
-        )}
-      </ul>
+            <h2>Candidates</h2>
+            {candidates.length === 0 ? (
+                <p>Loading candidates...</p>
+            ) : (
+                <ul>
+                    {candidates.map((candidate) => (
+                        <li key={candidate.id}>
+                            {candidate.name} - {candidate.votes} votes
+                            <button onClick={() => voteCandidate(candidate.id)}>Vote</button>
+                        </li>
+                    ))}
+                </ul>
+            )}
 
-      <button onClick={vote} disabled={selectedCandidate === null}>
-        Vote
-      </button>
-    </div>
-  );
+            <p>{voteStatus}</p>
+        </div>
+    );
 };
 
-export default VotingApp;
+export default Voting;
